@@ -75,6 +75,12 @@
   .vote-opt .line1 { position: relative; display: flex; justify-content: space-between; font-size: 15px; font-weight: 600; }
   .vote-opt .count { color: var(--primary-dark); }
   .vote-opt .voters { position: relative; font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+  .link-row { position: relative; margin-top: 4px; }
+  .shop-link {
+    font-size: 12px; color: #1a73d8; text-decoration: none;
+    background: #eef5fe; border-radius: 6px; padding: 2px 8px; display: inline-block;
+  }
+  .shop-link:active { background: #dceafc; }
   .tag { font-size: 11px; background: var(--green); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
   .deadline { text-align: center; font-size: 13px; color: var(--muted); margin: 6px 0; }
   .deadline.over { color: #d33; font-weight: 600; }
@@ -206,17 +212,23 @@ async function blobPut(id, data) {
 }
 
 /* ---------------- 美团分享文本解析 ---------------- */
-function extractShopName(text) {
-  if (!text) return "";
+function extractShopInfo(text) {
+  if (!text) return { name: "", url: "" };
   text = text.trim();
+  // 提取第一个链接(美团/点评短链等)
+  const um = text.match(/https?:\/\/\S+/);
+  const url = um ? um[0].replace(/[。，！？、"'》)）\]]+$/, "") : "";
   // 1) 优先取【店名】
-  let m = text.match(/【(.{1,40}?)】/);
-  if (m) return m[1].trim();
-  // 2) 去掉所有 URL 后取第一行有效文字
-  const noUrl = text.replace(/https?:\/\/\S+/g, "").trim();
-  const firstLine = noUrl.split(/\n/).map(s => s.trim()).find(s => s.length > 0) || "";
-  // 去掉常见前缀
-  return firstLine.replace(/^(我发现(一个|了)?|推荐|分享|@美团|美团)[::\s]*/,"").slice(0, 30).trim();
+  let name = "";
+  const m = text.match(/【(.{1,40}?)】/);
+  if (m) name = m[1].trim();
+  else {
+    // 2) 去掉所有 URL 后取第一行有效文字
+    const noUrl = text.replace(/https?:\/\/\S+/g, "").trim();
+    const firstLine = noUrl.split(/\n/).map(s => s.trim()).find(s => s.length > 0) || "";
+    name = firstLine.replace(/^(我发现(一个|了)?|推荐|分享|@美团|美团)[：:\s]*/,"").slice(0, 30).trim();
+  }
+  return { name, url };
 }
 
 /* ---------------- 创建投票 ---------------- */
@@ -225,20 +237,20 @@ let createdPollId = null;
 
 function renderDraft() {
   $("optList").innerHTML = draftOptions.map((o, i) =>
-    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}<span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
+    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}${o.url ? ' 🔗' : ''}<span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
   ).join("");
 }
-function addDraftOption(name) {
+function addDraftOption(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (draftOptions.some(o => o.name === name)) return toast("已存在该店家");
-  draftOptions.push({ id: uuid(), name });
+  draftOptions.push({ id: uuid(), name, url: url || "" });
   renderDraft();
 }
 function parseMeituan() {
-  const name = extractShopName($("mtPaste").value);
-  if (!name) return toast("没解析出店名,请手动输入");
-  addDraftOption(name); $("mtPaste").value = "";
+  const info = extractShopInfo($("mtPaste").value);
+  if (!info.name) return toast("没解析出店名,请手动输入");
+  addDraftOption(info.name, info.url); $("mtPaste").value = "";
 }
 function addManual() { addDraftOption($("manualName").value); $("manualName").value = ""; }
 
@@ -298,9 +310,11 @@ function renderPollView() {
     const names = votes.filter(v => v.optionId === o.id).map(v => escapeHtml(v.name)).join("、");
     const mine = myVote && myVote.optionId === o.id;
     const sel = selectedOpt === o.id && !myVote;
+    const link = o.url ? `<a class="shop-link" href="${escapeHtml(o.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">查看店家 ↗</a>` : "";
     return `<div class="vote-opt ${mine ? "mine" : ""} ${sel ? "selected" : ""}" onclick="pickOpt('${o.id}')">
       <div class="bar" style="width:${total ? (c/max*100) : 0}%"></div>
       <div class="line1"><span>${escapeHtml(o.name)}${mine ? '<span class="tag">我投的</span>' : ""}</span><span class="count">${c} 票</span></div>
+      ${link ? `<div class="link-row">${link}</div>` : ""}
       ${names ? `<div class="voters">👥 ${names}</div>` : ""}
     </div>`;
   }).join("");
@@ -356,7 +370,7 @@ async function submitVote() {
   } catch (e) { toast("投票失败:" + e.message); $("voteBtn").disabled = false; }
 }
 
-async function addOptionToPoll(name) {
+async function addOptionToPoll(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (poll.options.some(o => o.name === name)) return toast("已存在该店家");
@@ -365,7 +379,7 @@ async function addOptionToPoll(name) {
     latest.options = latest.options || [];
     let opt = latest.options.find(o => o.name === name);
     if (!opt) {
-      opt = { id: uuid(), name };
+      opt = { id: uuid(), name, url: url || "" };
       latest.options.push(opt);
       await blobPut(pollId, latest);
     }
@@ -377,9 +391,9 @@ async function addOptionToPoll(name) {
   } catch (e) { toast("添加失败:" + e.message); }
 }
 function parseMeituan2() {
-  const name = extractShopName($("mtPaste2").value);
-  if (!name) return toast("没解析出店名,请手动输入");
-  addOptionToPoll(name);
+  const info = extractShopInfo($("mtPaste2").value);
+  if (!info.name) return toast("没解析出店名,请手动输入");
+  addOptionToPoll(info.name, info.url);
 }
 
 /* ---------------- 启动 ---------------- */
