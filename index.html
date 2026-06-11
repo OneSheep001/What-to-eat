@@ -330,7 +330,7 @@ function renderPollView() {
     const sel = selectedOpt === o.id && !myVote;
     const link = o.url ? `<a class="shop-link" href="${escapeHtml(o.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">查看店家 ↗</a>` : "";
     const dist = o.dist
-      ? `<span class="dist-tag">🚶 距人民广场站 ${escapeHtml(o.dist)}</span>`
+      ? `<span class="dist-tag" onclick="event.stopPropagation();fillDist('${o.id}')" title="点击修改">🚶 距人民广场站 ${escapeHtml(o.dist)}</span>`
       : (!isOver() ? `<span class="dist-tag dist-add" onclick="event.stopPropagation();fillDist('${o.id}')">🚶 补充距离</span>` : "");
     return `<div class="vote-opt ${mine ? "mine" : ""} ${sel ? "selected" : ""}" onclick="pickOpt('${o.id}')">
       <div class="bar" style="width:${total ? (c/max*100) : 0}%"></div>
