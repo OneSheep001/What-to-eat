@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>今天吃什么 · 群投票</title>
+<style>
+  :root {
+    --primary: #ffc300;
+    --primary-dark: #e6a800;
+    --bg: #f7f7f7;
+    --card: #ffffff;
+    --text: #222;
+    --muted: #999;
+    --green: #07c160;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 560px; margin: 0 auto; padding: 16px 14px 60px;
+  }
+  h1 { font-size: 20px; text-align: center; padding: 14px 0 4px; }
+  .sub { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .card {
+    background: var(--card); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .card h2 { font-size: 15px; margin-bottom: 10px; }
+  label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px; }
+  input[type=text], input[type=datetime-local], textarea {
+    width: 100%; padding: 10px 12px; font-size: 15px;
+    border: 1px solid #e3e3e3; border-radius: 10px; background: #fafafa;
+    outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--primary); background: #fff; }
+  textarea { resize: vertical; min-height: 64px; }
+  .btn {
+    display: block; width: 100%; padding: 13px; margin-top: 12px;
+    font-size: 16px; font-weight: 600; border: none; border-radius: 12px;
+    background: var(--primary); color: #553c00; cursor: pointer;
+  }
+  .btn:active { background: var(--primary-dark); }
+  .btn.green { background: var(--green); color: #fff; }
+  .btn.ghost { background: #fff; border: 1px solid #ddd; color: #555; font-weight: 500; }
+  .btn:disabled { opacity: .5; }
+  .row { display: flex; gap: 8px; }
+  .row .btn { margin-top: 0; }
+  .row input { flex: 1; }
+  .row button.small {
+    padding: 0 16px; border: none; border-radius: 10px; font-size: 14px;
+    background: var(--primary); color: #553c00; cursor: pointer; white-space: nowrap;
+  }
+  .opt-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #fffbe8; border: 1px solid #f5e6a8; border-radius: 10px;
+    padding: 9px 12px; margin-top: 8px; font-size: 15px;
+  }
+  .opt-item .del { margin-left: auto; color: #c66; cursor: pointer; font-size: 13px; }
+  /* 投票页选项 */
+  .vote-opt {
+    position: relative; overflow: hidden;
+    border: 2px solid #eee; border-radius: 12px;
+    padding: 12px 14px; margin-top: 10px; cursor: pointer;
+    background: #fff; transition: border-color .15s;
+  }
+  .vote-opt.selected { border-color: var(--green); }
+  .vote-opt.mine { border-color: var(--green); background: #f0fbf4; }
+  .vote-opt .bar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: rgba(255,195,0,.18); width: 0; transition: width .4s;
+  }
+  .vote-opt .line1 { position: relative; display: flex; justify-content: space-between; font-size: 15px; font-weight: 600; }
+  .vote-opt .count { color: var(--primary-dark); }
+  .vote-opt .voters { position: relative; font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+  .tag { font-size: 11px; background: var(--green); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
+  .deadline { text-align: center; font-size: 13px; color: var(--muted); margin: 6px 0; }
+  .deadline.over { color: #d33; font-weight: 600; }
+  .share-link {
+    background: #f0f0f0; border-radius: 8px; padding: 10px;
+    font-size: 12px; word-break: break-all; color: #555; margin-top: 10px;
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%);
+    background: rgba(0,0,0,.75); color: #fff; padding: 9px 18px;
+    border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; white-space: nowrap; z-index: 99;
+  }
+  .toast.show { opacity: 1; }
+  .hidden { display: none; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h1 id="pageTitle">🍜 今天吃什么 · 群投票</h1>
+<div class="sub" id="pageSub">创建投票 → 复制链接发到群里</div>
+
+<!--
+  零配置说明:投票数据存储在 jsonblob.com(免费公共 JSON 存储,无需注册)。
+  部署:把本文件上传到任意静态托管(GitHub Pages / Netlify Drop)即可使用。
+-->
+
+<!-- ===================== 创建投票视图 ===================== -->
+<div id="createView">
+  <div class="card">
+    <h2>① 投票信息</h2>
+    <label>投票标题</label>
+    <input type="text" id="pollTitle" value="今天中午吃什么?" maxlength="40">
+    <label>截止时间</label>
+    <input type="datetime-local" id="pollDeadline">
+  </div>
+
+  <div class="card">
+    <h2>② 添加候选店家</h2>
+    <label>粘贴美团分享文本,自动提取店名</label>
+    <textarea id="mtPaste" placeholder="在美团 App 里点店家「分享 → 复制链接」,把整段文字粘贴到这里,例如:&#10;【蜀大侠火锅(国贸店)】人均89元… https://dpurl.cn/xxx"></textarea>
+    <button class="btn ghost" onclick="parseMeituan()">📋 提取店名并添加</button>
+    <label style="margin-top:14px">或手动输入店名</label>
+    <div class="row">
+      <input type="text" id="manualName" placeholder="例如:老乡鸡" maxlength="30" onkeydown="if(event.key==='Enter')addManual()">
+      <button class="small" onclick="addManual()">添加</button>
+    </div>
+    <div id="optList"></div>
+  </div>
+
+  <button class="btn" id="createBtn" onclick="createPoll()">🚀 创建投票,生成群链接</button>
+
+  <div class="card hidden" id="shareCard">
+    <h2>✅ 创建成功!发这个链接到微信群</h2>
+    <div class="share-link" id="shareLink"></div>
+    <button class="btn green" onclick="copyShareLink()">复制链接</button>
+    <button class="btn ghost" onclick="openPoll(createdPollId)">进入投票页</button>
+  </div>
+</div>
+
+<!-- ===================== 投票视图 ===================== -->
+<div id="voteView" class="hidden">
+  <div class="card">
+    <div class="deadline" id="deadlineText"></div>
+    <label>你的昵称(群里大家认识你的名字)</label>
+    <input type="text" id="voterName" placeholder="必填,投票后不可改" maxlength="16">
+    <div id="voteOpts"></div>
+    <button class="btn green" id="voteBtn" onclick="submitVote()">投出我的一票</button>
+    <div class="hint" style="text-align:center" id="totalText"></div>
+  </div>
+
+  <div class="card" id="addOptCard">
+    <h2>没有想吃的?自己加一个</h2>
+    <textarea id="mtPaste2" placeholder="粘贴美团分享文本自动提取店名,或在下方手动输入"></textarea>
+    <button class="btn ghost" onclick="parseMeituan2()">📋 提取店名并添加</button>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="manualName2" placeholder="手动输入店名" maxlength="30" onkeydown="if(event.key==='Enter')addOptionToPoll(this.value)">
+      <button class="small" onclick="addOptionToPoll(document.getElementById('manualName2').value)">添加</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- 工具 ---------------- */
+const $ = id => document.getElementById(id);
+let toastTimer;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+function uuid() { return ([1e7]+-1e3+-4e3).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c/4).toString(16)) + Date.now().toString(36); }
+function deviceId() {
+  let d = localStorage.getItem("vote_device_id");
+  if (!d) { d = uuid(); localStorage.setItem("vote_device_id", d); }
+  return d;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* ---------------- jsonblob.com 免注册存储 ---------------- */
+const API = "https://jsonblob.com/api/jsonBlob";
+async function blobCreate(data) {
+  const r = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const loc = r.headers.get("Location") || "";
+  const id = loc.split("/").pop();
+  if (!id) throw new Error("未获取到投票ID,请重试");
+  return id;
+}
+async function blobGet(id) {
+  const r = await fetch(API + "/" + id, { headers: { "Accept": "application/json" }, cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+async function blobPut(id, data) {
+  const r = await fetch(API + "/" + id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+/* ---------------- 美团分享文本解析 ---------------- */
+function extractShopName(text) {
+  if (!text) return "";
+  text = text.trim();
+  // 1) 优先取【店名】
+  let m = text.match(/【(.{1,40}?)】/);
+  if (m) return m[1].trim();
+  // 2) 去掉所有 URL 后取第一行有效文字
+  const noUrl = text.replace(/https?:\/\/\S+/g, "").trim();
+  const firstLine = noUrl.split(/\n/).map(s => s.trim()).find(s => s.length > 0) || "";
+  // 去掉常见前缀
+  return firstLine.replace(/^(我发现(一个|了)?|推荐|分享|@美团|美团)[::\s]*/,"").slice(0, 30).trim();
+}
+
+/* ---------------- 创建投票 ---------------- */
+let draftOptions = [];
+let createdPollId = null;
+
+function renderDraft() {
+  $("optList").innerHTML = draftOptions.map((o, i) =>
+    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}<span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
+  ).join("");
+}
+function addDraftOption(name) {
+  name = (name || "").trim();
+  if (!name) return toast("店名为空");
+  if (draftOptions.some(o => o.name === name)) return toast("已存在该店家");
+  draftOptions.push({ id: uuid(), name });
+  renderDraft();
+}
+function parseMeituan() {
+  const name = extractShopName($("mtPaste").value);
+  if (!name) return toast("没解析出店名,请手动输入");
+  addDraftOption(name); $("mtPaste").value = "";
+}
+function addManual() { addDraftOption($("manualName").value); $("manualName").value = ""; }
+
+async function createPoll() {
+  const title = $("pollTitle").value.trim() || "今天吃什么?";
+  const deadline = $("pollDeadline").value ? new Date($("pollDeadline").value).toISOString() : null;
+  if (draftOptions.length < 2) return toast("至少添加 2 个店家");
+  $("createBtn").disabled = true;
+  try {
+    createdPollId = await blobCreate({ title, deadline, options: draftOptions, votes: [] });
+    const link = location.origin + location.pathname + "?poll=" + createdPollId;
+    $("shareLink").textContent = `🍜 ${title}\n点链接投票 👉 ${link}`;
+    $("shareCard").classList.remove("hidden");
+    $("shareCard").scrollIntoView({ behavior: "smooth" });
+    toast("创建成功!");
+  } catch (e) { toast("创建失败:" + e.message); }
+  $("createBtn").disabled = false;
+}
+function copyShareLink() {
+  navigator.clipboard.writeText($("shareLink").textContent)
+    .then(() => toast("已复制,去微信群粘贴吧"))
+    .catch(() => toast("复制失败,请长按手动复制"));
+}
+function openPoll(id) { location.href = location.origin + location.pathname + "?poll=" + id; }
+
+/* ---------------- 投票页 ---------------- */
+let poll = null, votes = [], selectedOpt = null, myVote = null, pollTimer = null;
+const pollId = new URLSearchParams(location.search).get("poll");
+
+function isOver() { return poll && poll.deadline && Date.now() > new Date(poll.deadline).getTime(); }
+
+async function loadPoll() {
+  poll = await blobGet(pollId);
+  votes = poll.votes || [];
+  myVote = votes.find(v => v.deviceId === deviceId()) || null;
+  renderPollView();
+}
+
+function renderPollView() {
+  $("pageTitle").textContent = "🍜 " + poll.title;
+  $("pageSub").textContent = "每人一票 · 实时刷新";
+  document.title = poll.title;
+
+  if (poll.deadline) {
+    const d = new Date(poll.deadline);
+    const txt = `${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    $("deadlineText").textContent = isOver() ? `⏰ 投票已于 ${txt} 截止` : `⏳ 截止时间:${txt}`;
+    $("deadlineText").classList.toggle("over", isOver());
+  } else $("deadlineText").textContent = "";
+
+  const counts = {}; votes.forEach(v => counts[v.optionId] = (counts[v.optionId] || 0) + 1);
+  const max = Math.max(1, ...Object.values(counts));
+  const total = votes.length;
+
+  $("voteOpts").innerHTML = poll.options.map(o => {
+    const c = counts[o.id] || 0;
+    const names = votes.filter(v => v.optionId === o.id).map(v => escapeHtml(v.name)).join("、");
+    const mine = myVote && myVote.optionId === o.id;
+    const sel = selectedOpt === o.id && !myVote;
+    return `<div class="vote-opt ${mine ? "mine" : ""} ${sel ? "selected" : ""}" onclick="pickOpt('${o.id}')">
+      <div class="bar" style="width:${total ? (c/max*100) : 0}%"></div>
+      <div class="line1"><span>${escapeHtml(o.name)}${mine ? '<span class="tag">我投的</span>' : ""}</span><span class="count">${c} 票</span></div>
+      ${names ? `<div class="voters">👥 ${names}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  $("totalText").textContent = `共 ${total} 人已投票`;
+  const done = !!myVote, over = isOver();
+  $("voteBtn").disabled = done || over;
+  $("voteBtn").textContent = over ? "投票已截止" : done ? "✅ 你已投过票" : "投出我的一票";
+  $("voterName").disabled = done;
+  if (done && !$("voterName").value) $("voterName").value = myVote.name;
+  $("addOptCard").classList.toggle("hidden", over);
+}
+
+function pickOpt(id) {
+  if (myVote || isOver()) return;
+  selectedOpt = id; renderPollView();
+}
+
+async function submitVote() {
+  if (isOver()) return toast("已截止");
+  if (myVote) return toast("你已投过票");
+  const name = $("voterName").value.trim();
+  if (!name) return toast("请先填昵称");
+  if (!selectedOpt) return toast("请先点选一个店家");
+  $("voteBtn").disabled = true;
+  try {
+    // 提交前重新拉取最新数据,防止覆盖别人的票/重复投票
+    const latest = await blobGet(pollId);
+    latest.votes = latest.votes || [];
+    if (latest.votes.some(v => v.deviceId === deviceId())) {
+      toast("你已投过票"); poll = latest; votes = latest.votes;
+      myVote = votes.find(v => v.deviceId === deviceId()); renderPollView(); return;
+    }
+    latest.votes.push({ pollId, optionId: selectedOpt, name, deviceId: deviceId(), time: Date.now() });
+    await blobPut(pollId, latest);
+    localStorage.setItem("vote_name", name);
+    toast("投票成功!");
+    await loadPoll();
+  } catch (e) { toast("投票失败:" + e.message); $("voteBtn").disabled = false; }
+}
+
+async function addOptionToPoll(name) {
+  name = (name || "").trim();
+  if (!name) return toast("店名为空");
+  if (poll.options.some(o => o.name === name)) return toast("已存在该店家");
+  try {
+    const latest = await blobGet(pollId);
+    latest.options = latest.options || [];
+    if (!latest.options.some(o => o.name === name)) {
+      latest.options.push({ id: uuid(), name });
+      await blobPut(pollId, latest);
+    }
+    $("manualName2").value = ""; $("mtPaste2").value = "";
+    toast("已添加「" + name + "」");
+    await loadPoll();
+  } catch (e) { toast("添加失败:" + e.message); }
+}
+function parseMeituan2() {
+  const name = extractShopName($("mtPaste2").value);
+  if (!name) return toast("没解析出店名,请手动输入");
+  addOptionToPoll(name);
+}
+
+/* ---------------- 启动 ---------------- */
+(function init() {
+  if (pollId) {
+    $("createView").classList.add("hidden");
+    $("voteView").classList.remove("hidden");
+    $("voterName").value = localStorage.getItem("vote_name") || "";
+    loadPoll().catch(e => toast("加载失败:" + e.message));
+    pollTimer = setInterval(() => loadPoll().catch(() => {}), 5000); // 5 秒实时刷新
+  } else {
+    // 默认截止时间:今天 11:30,过了就明天 11:30
+    const d = new Date(); d.setHours(11, 30, 0, 0);
+    if (d < new Date()) d.setDate(d.getDate() + 1);
+    $("pollDeadline").value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T11:30`;
+  }
+})();
+</script>
+</body>
+</html>
