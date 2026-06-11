@@ -91,6 +91,18 @@
   .toast.show { opacity: 1; }
   .hidden { display: none; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+  /* “其他”虚线选项 */
+  .vote-opt.other-opt {
+    border-style: dashed; border-color: #ccc; text-align: center;
+    color: var(--muted); font-size: 14px; padding: 11px;
+  }
+  .other-form { margin-top: 10px; }
+  .live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); margin-right: 4px; animation: blink 1.6s infinite;
+    vertical-align: 1px;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 </style>
 </head>
 <body>
@@ -140,21 +152,20 @@
 <div id="voteView" class="hidden">
   <div class="card">
     <div class="deadline" id="deadlineText"></div>
-    <label>你的昵称(群里大家认识你的名字)</label>
+    <label>你的昵称(建议填群里的名字,填一次下次自动记住)</label>
     <input type="text" id="voterName" placeholder="必填,投票后不可改" maxlength="16">
     <div id="voteOpts"></div>
+    <!-- “其他店家”内联添加表单 -->
+    <div id="otherForm" class="other-form hidden">
+      <textarea id="mtPaste2" placeholder="粘贴美团分享文本自动提取店名,或在下方手动输入"></textarea>
+      <button class="btn ghost" onclick="parseMeituan2()">📋 提取店名并添加</button>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="manualName2" placeholder="手动输入店名" maxlength="30" onkeydown="if(event.key==='Enter')addOptionToPoll(this.value)">
+        <button class="small" onclick="addOptionToPoll(document.getElementById('manualName2').value)">添加</button>
+      </div>
+    </div>
     <button class="btn green" id="voteBtn" onclick="submitVote()">投出我的一票</button>
     <div class="hint" style="text-align:center" id="totalText"></div>
-  </div>
-
-  <div class="card" id="addOptCard">
-    <h2>没有想吃的?自己加一个</h2>
-    <textarea id="mtPaste2" placeholder="粘贴美团分享文本自动提取店名,或在下方手动输入"></textarea>
-    <button class="btn ghost" onclick="parseMeituan2()">📋 提取店名并添加</button>
-    <div class="row" style="margin-top:10px">
-      <input type="text" id="manualName2" placeholder="手动输入店名" maxlength="30" onkeydown="if(event.key==='Enter')addOptionToPoll(this.value)">
-      <button class="small" onclick="addOptionToPoll(document.getElementById('manualName2').value)">添加</button>
-    </div>
   </div>
 </div>
 
@@ -268,7 +279,7 @@ async function loadPoll() {
 
 function renderPollView() {
   $("pageTitle").textContent = "🍜 " + poll.title;
-  $("pageSub").textContent = "每人一票 · 实时刷新";
+  $("pageSub").innerHTML = '<span class="live-dot"></span>每人一票 · 票数实时刷新';
   document.title = poll.title;
 
   if (poll.deadline) {
@@ -294,13 +305,27 @@ function renderPollView() {
     </div>`;
   }).join("");
 
+  // “其他店家”选项:点击展开添加表单(截止后隐藏)
+  if (!isOver()) {
+    $("voteOpts").innerHTML += `<div class="vote-opt other-opt" onclick="toggleOtherForm()">➕ 其他店家？点这里自己加一个</div>`;
+  } else {
+    otherFormOpen = false;
+  }
+  $("otherForm").classList.toggle("hidden", !otherFormOpen || isOver());
+
   $("totalText").textContent = `共 ${total} 人已投票`;
   const done = !!myVote, over = isOver();
   $("voteBtn").disabled = done || over;
   $("voteBtn").textContent = over ? "投票已截止" : done ? "✅ 你已投过票" : "投出我的一票";
   $("voterName").disabled = done;
   if (done && !$("voterName").value) $("voterName").value = myVote.name;
-  $("addOptCard").classList.toggle("hidden", over);
+}
+
+let otherFormOpen = false;
+function toggleOtherForm() {
+  otherFormOpen = !otherFormOpen;
+  $("otherForm").classList.toggle("hidden", !otherFormOpen);
+  if (otherFormOpen) $("manualName2").focus();
 }
 
 function pickOpt(id) {
@@ -338,12 +363,16 @@ async function addOptionToPoll(name) {
   try {
     const latest = await blobGet(pollId);
     latest.options = latest.options || [];
-    if (!latest.options.some(o => o.name === name)) {
-      latest.options.push({ id: uuid(), name });
+    let opt = latest.options.find(o => o.name === name);
+    if (!opt) {
+      opt = { id: uuid(), name };
+      latest.options.push(opt);
       await blobPut(pollId, latest);
     }
     $("manualName2").value = ""; $("mtPaste2").value = "";
-    toast("已添加「" + name + "」");
+    otherFormOpen = false;
+    if (!myVote) selectedOpt = opt.id; // 自动选中刚加的店
+    toast("已添加「" + name + "」" + (!myVote ? ",已为你选中" : ""));
     await loadPoll();
   } catch (e) { toast("添加失败:" + e.message); }
 }
@@ -360,7 +389,7 @@ function parseMeituan2() {
     $("voteView").classList.remove("hidden");
     $("voterName").value = localStorage.getItem("vote_name") || "";
     loadPoll().catch(e => toast("加载失败:" + e.message));
-    pollTimer = setInterval(() => loadPoll().catch(() => {}), 5000); // 5 秒实时刷新
+    pollTimer = setInterval(() => loadPoll().catch(() => {}), 3000); // 3 秒实时刷新
   } else {
     // 默认截止时间:今天 11:30,过了就明天 11:30
     const d = new Date(); d.setHours(11, 30, 0, 0);
