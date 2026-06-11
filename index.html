@@ -289,7 +289,13 @@ async function loadPoll() {
   renderPollView();
 }
 
+let lastRenderKey = "";
 function renderPollView() {
+  // 数据没变就不重渲染,避免打断用户正在进行的点击/输入
+  const key = JSON.stringify([poll.options, votes, selectedOpt, isOver()]);
+  if (key === lastRenderKey) return;
+  lastRenderKey = key;
+
   $("pageTitle").textContent = "🍜 " + poll.title;
   $("pageSub").innerHTML = '<span class="live-dot"></span>每人一票 · 票数实时刷新';
   document.title = poll.title;
