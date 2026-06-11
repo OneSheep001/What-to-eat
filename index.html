@@ -221,6 +221,39 @@ async function blobPut(id, data) {
   if (!r.ok) throw new Error("HTTP " + r.status);
 }
 
+/* ---------------- 高德地图自动测距(选配) ----------------
+   注册 https://console.amap.com → 创建应用 → 添加 Key(服务平台选“Web服务”)
+   把 Key 填到下面即可自动按店名计算到人民广场地铁站的步行距离;不填则手动输入 */
+const AMAP_KEY = "";
+const AMAP_CITY = "上海";              // 店家所在城市
+const STATION_NAME = "人民广场地铁站";  // 起点
+
+let stationLoc = null;
+async function amapGet(url) {
+  const r = await fetch(url);
+  const d = await r.json();
+  if (d.status !== "1") throw new Error(d.info || "高德API错误");
+  return d;
+}
+async function amapFindLoc(keyword) {
+  const d = await amapGet(`https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(keyword)}&city=${encodeURIComponent(AMAP_CITY)}&citylimit=true&offset=1&key=${AMAP_KEY}`);
+  return (d.pois && d.pois[0] && d.pois[0].location) || "";
+}
+// 返回如 "步行约8分钟(650米)";失败返回 ""
+async function autoDist(shopName) {
+  if (!AMAP_KEY) return "";
+  try {
+    if (!stationLoc) stationLoc = await amapFindLoc(STATION_NAME);
+    if (!stationLoc) return "";
+    const loc = await amapFindLoc(shopName);
+    if (!loc) return "";
+    const w = await amapGet(`https://restapi.amap.com/v3/direction/walking?origin=${stationLoc}&destination=${loc}&key=${AMAP_KEY}`);
+    const p = w.route && w.route.paths && w.route.paths[0];
+    if (!p) return "";
+    return `步行约${Math.max(1, Math.round(p.duration / 60))}分钟(${p.distance}米)`;
+  } catch { return ""; }
+}
+
 /* ---------------- 美团分享文本解析 ---------------- */
 function extractShopInfo(text) {
   if (!text) return { name: "", url: "" };
@@ -256,8 +289,11 @@ function addDraftOption(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (draftOptions.some(o => o.name === name)) return toast("已存在该店家");
-  draftOptions.push({ id: uuid(), name, url: url || "", dist: "" });
+  const opt = { id: uuid(), name, url: url || "", dist: "" };
+  draftOptions.push(opt);
   renderDraft();
+  // 配了高德 key 则后台自动测距
+  if (AMAP_KEY) autoDist(name).then(d => { if (d && !opt.dist) { opt.dist = d; renderDraft(); } });
 }
 function parseMeituan() {
   const info = extractShopInfo($("mtPaste").value);
@@ -395,7 +431,8 @@ async function addOptionToPoll(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (poll.options.some(o => o.name === name)) return toast("已存在该店家");
-  const dist = $("manualDist2").value.trim();
+  let dist = $("manualDist2").value.trim();
+  if (!dist && AMAP_KEY) dist = await autoDist(name); // 自动测距
   try {
     const latest = await blobGet(pollId);
     latest.options = latest.options || [];
@@ -413,19 +450,27 @@ async function addOptionToPoll(name, url) {
   } catch (e) { toast("添加失败:" + e.message); }
 }
 
-// 为已有选项补填距离(任何人都可填)
+// 为已有选项补填距离:配了高德 key 先自动算,算不出再手动输入
 async function fillDist(optId) {
-  const v = prompt("该店距人民广场地铁站的步行距离?\n例如:步行8分钟 / 600米");
-  if (v === null) return;
-  const dist = v.trim().slice(0, 20);
-  if (!dist) return;
+  let dist = "";
+  const optName = (poll.options.find(o => o.id === optId) || {}).name || "";
+  if (AMAP_KEY) {
+    toast("正在自动计算距离…");
+    dist = await autoDist(optName);
+  }
+  if (!dist) {
+    const v = prompt(`「${optName}」距人民广场地铁站的步行距离?\n例如:步行8分钟 / 600米`);
+    if (v === null) return;
+    dist = v.trim().slice(0, 20);
+    if (!dist) return;
+  }
   try {
     const latest = await blobGet(pollId);
     const opt = (latest.options || []).find(o => o.id === optId);
     if (!opt) return toast("选项不存在");
     opt.dist = dist;
     await blobPut(pollId, latest);
-    toast("距离已保存");
+    toast("距离已保存:" + dist);
     await loadPoll();
   } catch (e) { toast("保存失败:" + e.message); }
 }
