@@ -81,6 +81,10 @@
     background: #eef5fe; border-radius: 6px; padding: 2px 8px; display: inline-block;
   }
   .shop-link:active { background: #dceafc; }
+  .dist-tag {
+    font-size: 12px; color: #6b8e23; background: #f2f8e8;
+    border-radius: 6px; padding: 2px 8px; display: inline-block; margin-right: 6px;
+  }
   .tag { font-size: 11px; background: var(--green); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
   .deadline { text-align: center; font-size: 13px; color: var(--muted); margin: 6px 0; }
   .deadline.over { color: #d33; font-weight: 600; }
@@ -135,6 +139,8 @@
     <h2>② 添加候选店家</h2>
     <label>粘贴美团分享文本,自动提取店名</label>
     <textarea id="mtPaste" placeholder="在美团 App 里点店家「分享 → 复制链接」,把整段文字粘贴到这里,例如:&#10;【蜀大侠火锅(国贸店)】人均89元… https://dpurl.cn/xxx"></textarea>
+    <label>距人民广场地铁站步行距离(选填)</label>
+    <input type="text" id="manualDist" placeholder="例如:步行8分钟 / 600米" maxlength="20">
     <button class="btn ghost" onclick="parseMeituan()">📋 提取店名并添加</button>
     <label style="margin-top:14px">或手动输入店名</label>
     <div class="row">
@@ -164,6 +170,7 @@
     <!-- “其他店家”内联添加表单 -->
     <div id="otherForm" class="other-form hidden">
       <textarea id="mtPaste2" placeholder="粘贴美团分享文本自动提取店名,或在下方手动输入"></textarea>
+      <input type="text" id="manualDist2" placeholder="距人民广场地铁站步行距离(选填),如:步行8分钟" maxlength="20" style="margin-top:8px">
       <button class="btn ghost" onclick="parseMeituan2()">📋 提取店名并添加</button>
       <div class="row" style="margin-top:10px">
         <input type="text" id="manualName2" placeholder="手动输入店名" maxlength="30" onkeydown="if(event.key==='Enter')addOptionToPoll(this.value)">
@@ -237,14 +244,16 @@ let createdPollId = null;
 
 function renderDraft() {
   $("optList").innerHTML = draftOptions.map((o, i) =>
-    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}${o.url ? ' 🔗' : ''}<span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
+    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}${o.dist ? ` · 🚶${escapeHtml(o.dist)}` : ''}${o.url ? ' 🔗' : ''}<span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
   ).join("");
 }
 function addDraftOption(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (draftOptions.some(o => o.name === name)) return toast("已存在该店家");
-  draftOptions.push({ id: uuid(), name, url: url || "" });
+  const dist = $("manualDist").value.trim();
+  $("manualDist").value = "";
+  draftOptions.push({ id: uuid(), name, url: url || "", dist });
   renderDraft();
 }
 function parseMeituan() {
@@ -317,10 +326,11 @@ function renderPollView() {
     const mine = myVote && myVote.optionId === o.id;
     const sel = selectedOpt === o.id && !myVote;
     const link = o.url ? `<a class="shop-link" href="${escapeHtml(o.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">查看店家 ↗</a>` : "";
+    const dist = o.dist ? `<span class="dist-tag">🚶 距人民广场站 ${escapeHtml(o.dist)}</span>` : "";
     return `<div class="vote-opt ${mine ? "mine" : ""} ${sel ? "selected" : ""}" onclick="pickOpt('${o.id}')">
       <div class="bar" style="width:${total ? (c/max*100) : 0}%"></div>
       <div class="line1"><span>${escapeHtml(o.name)}${mine ? '<span class="tag">我投的</span>' : ""}</span><span class="count">${c} 票</span></div>
-      ${link ? `<div class="link-row">${link}</div>` : ""}
+      ${dist || link ? `<div class="link-row">${dist}${link}</div>` : ""}
       ${names ? `<div class="voters">👥 ${names}</div>` : ""}
     </div>`;
   }).join("");
@@ -380,16 +390,17 @@ async function addOptionToPoll(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (poll.options.some(o => o.name === name)) return toast("已存在该店家");
+  const dist = $("manualDist2").value.trim();
   try {
     const latest = await blobGet(pollId);
     latest.options = latest.options || [];
     let opt = latest.options.find(o => o.name === name);
     if (!opt) {
-      opt = { id: uuid(), name, url: url || "" };
+      opt = { id: uuid(), name, url: url || "", dist };
       latest.options.push(opt);
       await blobPut(pollId, latest);
     }
-    $("manualName2").value = ""; $("mtPaste2").value = "";
+    $("manualName2").value = ""; $("mtPaste2").value = ""; $("manualDist2").value = "";
     otherFormOpen = false;
     if (!myVote) selectedOpt = opt.id; // 自动选中刚加的店
     toast("已添加「" + name + "」" + (!myVote ? ",已为你选中" : ""));
