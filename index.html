@@ -99,7 +99,7 @@
 <div class="sub" id="pageSub">创建投票 → 复制链接发到群里</div>
 
 <!--
-  零配置说明:投票数据存储在 jsonblob.com(免费公共 JSON 存储,无需注册)。
+  零配置说明:投票数据存储在 kvdb.io(免费 KV 存储,支持跨域,无需注册)。
   部署:把本文件上传到任意静态托管(GitHub Pages / Netlify Drop)即可使用。
 -->
 
@@ -176,33 +176,22 @@ function deviceId() {
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-/* ---------------- jsonblob.com 免注册存储 ---------------- */
-const API = "https://jsonblob.com/api/jsonBlob";
+/* ---------------- kvdb.io 免注册存储(支持跨域) ---------------- */
+const KV_BUCKET = "8uu5sFtkkBr6stcqpsML1r";
+const KV = "https://kvdb.io/" + KV_BUCKET + "/";
 async function blobCreate(data) {
-  const r = await fetch(API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(data)
-  });
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  const loc = r.headers.get("Location") || "";
-  const id = loc.split("/").pop();
-  if (!id) throw new Error("未获取到投票ID,请重试");
+  const id = uuid();
+  await blobPut(id, data);
   return id;
 }
 async function blobGet(id) {
-  const r = await fetch(API + "/" + id, { headers: { "Accept": "application/json" }, cache: "no-store" });
+  const r = await fetch(KV + id + "?t=" + Date.now(), { cache: "no-store" });
   if (!r.ok) throw new Error("HTTP " + r.status);
   return r.json();
 }
 async function blobPut(id, data) {
-  const r = await fetch(API + "/" + id, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(data)
-  });
+  const r = await fetch(KV + id, { method: "PUT", body: JSON.stringify(data) });
   if (!r.ok) throw new Error("HTTP " + r.status);
-  return r.json();
 }
 
 /* ---------------- 美团分享文本解析 ---------------- */
