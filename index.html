@@ -85,6 +85,11 @@
     font-size: 12px; color: #6b8e23; background: #f2f8e8;
     border-radius: 6px; padding: 2px 8px; display: inline-block; margin-right: 6px;
   }
+  .dist-add { color: #999; background: #f3f3f3; border: 1px dashed #ccc; cursor: pointer; }
+  .dist-input {
+    width: 130px; padding: 4px 8px; font-size: 12px; margin-left: auto;
+    border: 1px solid #e3d9a8; border-radius: 8px; background: #fff;
+  }
   .tag { font-size: 11px; background: var(--green); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
   .deadline { text-align: center; font-size: 13px; color: var(--muted); margin: 6px 0; }
   .deadline.over { color: #d33; font-weight: 600; }
@@ -139,8 +144,6 @@
     <h2>② 添加候选店家</h2>
     <label>粘贴美团分享文本,自动提取店名</label>
     <textarea id="mtPaste" placeholder="在美团 App 里点店家「分享 → 复制链接」,把整段文字粘贴到这里,例如:&#10;【蜀大侠火锅(国贸店)】人均89元… https://dpurl.cn/xxx"></textarea>
-    <label>距人民广场地铁站步行距离(选填)</label>
-    <input type="text" id="manualDist" placeholder="例如:步行8分钟 / 600米" maxlength="20">
     <button class="btn ghost" onclick="parseMeituan()">📋 提取店名并添加</button>
     <label style="margin-top:14px">或手动输入店名</label>
     <div class="row">
@@ -244,16 +247,16 @@ let createdPollId = null;
 
 function renderDraft() {
   $("optList").innerHTML = draftOptions.map((o, i) =>
-    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}${o.dist ? ` · 🚶${escapeHtml(o.dist)}` : ''}${o.url ? ' 🔗' : ''}<span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
+    `<div class="opt-item">🍽️ ${escapeHtml(o.name)}${o.url ? ' 🔗' : ''}
+      <input class="dist-input" value="${escapeHtml(o.dist || '')}" placeholder="🚶距人民广场?分钟" maxlength="20" onclick="event.stopPropagation()" onchange="draftOptions[${i}].dist=this.value.trim()">
+      <span class="del" onclick="draftOptions.splice(${i},1);renderDraft()">删除</span></div>`
   ).join("");
 }
 function addDraftOption(name, url) {
   name = (name || "").trim();
   if (!name) return toast("店名为空");
   if (draftOptions.some(o => o.name === name)) return toast("已存在该店家");
-  const dist = $("manualDist").value.trim();
-  $("manualDist").value = "";
-  draftOptions.push({ id: uuid(), name, url: url || "", dist });
+  draftOptions.push({ id: uuid(), name, url: url || "", dist: "" });
   renderDraft();
 }
 function parseMeituan() {
@@ -326,7 +329,9 @@ function renderPollView() {
     const mine = myVote && myVote.optionId === o.id;
     const sel = selectedOpt === o.id && !myVote;
     const link = o.url ? `<a class="shop-link" href="${escapeHtml(o.url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">查看店家 ↗</a>` : "";
-    const dist = o.dist ? `<span class="dist-tag">🚶 距人民广场站 ${escapeHtml(o.dist)}</span>` : "";
+    const dist = o.dist
+      ? `<span class="dist-tag">🚶 距人民广场站 ${escapeHtml(o.dist)}</span>`
+      : (!isOver() ? `<span class="dist-tag dist-add" onclick="event.stopPropagation();fillDist('${o.id}')">🚶 补充距离</span>` : "");
     return `<div class="vote-opt ${mine ? "mine" : ""} ${sel ? "selected" : ""}" onclick="pickOpt('${o.id}')">
       <div class="bar" style="width:${total ? (c/max*100) : 0}%"></div>
       <div class="line1"><span>${escapeHtml(o.name)}${mine ? '<span class="tag">我投的</span>' : ""}</span><span class="count">${c} 票</span></div>
@@ -406,6 +411,23 @@ async function addOptionToPoll(name, url) {
     toast("已添加「" + name + "」" + (!myVote ? ",已为你选中" : ""));
     await loadPoll();
   } catch (e) { toast("添加失败:" + e.message); }
+}
+
+// 为已有选项补填距离(任何人都可填)
+async function fillDist(optId) {
+  const v = prompt("该店距人民广场地铁站的步行距离?\n例如:步行8分钟 / 600米");
+  if (v === null) return;
+  const dist = v.trim().slice(0, 20);
+  if (!dist) return;
+  try {
+    const latest = await blobGet(pollId);
+    const opt = (latest.options || []).find(o => o.id === optId);
+    if (!opt) return toast("选项不存在");
+    opt.dist = dist;
+    await blobPut(pollId, latest);
+    toast("距离已保存");
+    await loadPoll();
+  } catch (e) { toast("保存失败:" + e.message); }
 }
 function parseMeituan2() {
   const info = extractShopInfo($("mtPaste2").value);
